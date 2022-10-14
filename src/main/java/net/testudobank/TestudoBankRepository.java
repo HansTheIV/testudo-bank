@@ -120,7 +120,7 @@ public class TestudoBankRepository {
   }
 
   public static void setCustomerNumTransactionsForInterest(JdbcTemplate jdbcTemplate, String customerID, int newNum) {
-    String setNumTransactions = String.format("UPDATE Customers SET NumDepositsForInteres = %d WHERE CustomerID='%s", newNum, customerID);
+    String setNumTransactions = String.format("UPDATE Customers SET NumDepositsForInterest = %d WHERE CustomerID='%s'", newNum, customerID);
     jdbcTemplate.update(setNumTransactions);
   }
   

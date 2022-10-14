@@ -47,6 +47,7 @@ public class MvcController {
   public static String TRANSACTION_HISTORY_TRANSFER_RECEIVE_ACTION = "TransferReceive";
   public static String TRANSACTION_HISTORY_CRYPTO_SELL_ACTION = "CryptoSell";
   public static String TRANSACTION_HISTORY_CRYPTO_BUY_ACTION = "CryptoBuy";
+  public static String TRANSACTION_HISTORY_INTEREST_ACCRUED_ACTION = "InterestAccrued";
   public static String CRYPTO_HISTORY_SELL_ACTION = "Sell";
   public static String CRYPTO_HISTORY_BUY_ACTION = "Buy";
   public static Set<String> SUPPORTED_CRYPTOCURRENCIES = new HashSet<>(Arrays.asList("ETH", "SOL"));
@@ -255,8 +256,12 @@ public class MvcController {
 
   //attempts to apply interest to a user's account
   void tryToApplyInterest(JdbcTemplate jdbcTemplate, String userID, int depositInPennies) {
+    String currentTime = SQL_DATETIME_FORMATTER.format(new java.util.Date());
     // If the number of transactions since last interest application is (a multiple
     // of) 5, try to apply the interest and reset
+    if(depositInPennies < 2000) {
+      return;
+    }
     TestudoBankRepository.incrementCustomerNumTransactionsForInterest(jdbcTemplate, userID);
     // If num transactions is a multiple of 5 and it is enough to trigger interest, then:
     if (TestudoBankRepository.getCustomerNumTransactionsForInterest(jdbcTemplate, userID) % 5 == 0
@@ -267,7 +272,9 @@ public class MvcController {
       //apply interest to user balance
       int UserBalanceInPennies = TestudoBankRepository.getCustomerCashBalanceInPennies(jdbcTemplate, userID);
       int newBalanceInPennies = applyInterestRateToPennyAmount(UserBalanceInPennies);
+      int addedValueInPennies = newBalanceInPennies - UserBalanceInPennies;
       TestudoBankRepository.setCustomerCashBalance(jdbcTemplate, userID, newBalanceInPennies);
+      TestudoBankRepository.insertRowToTransactionHistoryTable(jdbcTemplate, userID, currentTime, TRANSACTION_HISTORY_INTEREST_ACCRUED_ACTION, addedValueInPennies);
     }
   }
   // HTML POST HANDLERS ////
