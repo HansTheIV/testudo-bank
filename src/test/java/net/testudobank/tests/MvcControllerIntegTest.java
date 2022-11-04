@@ -6,9 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.AbstractMap;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.script.ScriptException;
 
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.delegate.DatabaseDelegate;
@@ -1578,6 +1582,140 @@ public void testTransferPaysOverdraftAndDepositsRemainder() throws SQLException,
     cryptoTransactionTester.test(cryptoTransaction);
   }
 
+  /**
+   * Test a case where a user buys SOL, buys ETH, then sells some of their SOL
+   */
+  @Test
+  public void testEthBuy_SolBuy_SolSell() throws ScriptException {
+    
+    CryptoTransactionTester cryptoTransactionTesterEthBuy = CryptoTransactionTester.builder()
+            .initialBalanceInDollars(1000)
+            .initialCryptoBalance(
+              Stream.of(
+                new AbstractMap.SimpleEntry<String, Double>("ETH", 0.0),
+                new AbstractMap.SimpleEntry<String, Double>("SOL", 0.0)
+              ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
+            )
+            .build();
+    CryptoTransactionTester cryptoTransactionTesterSolBuy = CryptoTransactionTester.builder()
+            .initialBalanceInDollars(900)
+            .initialCryptoBalance(
+              Stream.of(
+                new AbstractMap.SimpleEntry<String, Double>("ETH", 0.1),
+                new AbstractMap.SimpleEntry<String, Double>("SOL", 0.0)
+              ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
+            )
+            .numTransactions(3)
+            .build();
+    CryptoTransactionTester cryptoTransactionTesterSolSell = CryptoTransactionTester.builder()
+    .initialBalanceInDollars(700)
+    .initialCryptoBalance(
+      Stream.of(
+        new AbstractMap.SimpleEntry<String, Double>("ETH", 0.1),
+        new AbstractMap.SimpleEntry<String, Double>("SOL", 0.2)
+      ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
+    )
+    .numTransactions(4)
+    .build();
+    
+    CryptoTransaction BuyEth = CryptoTransaction.builder()
+            .expectedEndingBalanceInDollars(900)
+            .expectedEndingCryptoBalance(0.1)
+            .cryptoPrice(1000)
+            .cryptoAmountToTransact(0.1)
+            .cryptoName("ETH")
+            .cryptoTransactionTestType(CryptoTransactionTestType.BUY) // ETH bought
+            .shouldSucceed(true)
+            .build();
+    cryptoTransactionTesterEthBuy.initialize();
+    cryptoTransactionTesterEthBuy.test(BuyEth);
+
+    cryptoTransactionTesterSolBuy.initialize();
+    CryptoTransaction BuySol = CryptoTransaction.builder()
+            .expectedEndingBalanceInDollars(700)
+            .expectedEndingCryptoBalance(0.2)
+            .cryptoPrice(1000)
+            .cryptoAmountToTransact(0.2)
+            .cryptoName("SOL")
+            .cryptoTransactionTestType(CryptoTransactionTestType.BUY)
+            .shouldSucceed(true)
+            .build();
+    
+    cryptoTransactionTesterSolBuy.initialize(); 
+    try {
+    cryptoTransactionTesterSolBuy.test(BuySol);
+    } 
+    catch(IncorrectResultSizeDataAccessException e) {
+      assertEquals(cryptoTransactionTesterSolBuy.numTransactions, e.getActualSize());
+    }
+
+    
+    CryptoTransaction SellSol = CryptoTransaction.builder()
+            .expectedEndingBalanceInDollars(800)
+            .expectedEndingCryptoBalance(0.1)
+            .cryptoPrice(1000)
+            .cryptoAmountToTransact(0.1)
+            .cryptoName("SOL")
+            .cryptoTransactionTestType(CryptoTransactionTestType.SELL)
+            .shouldSucceed(true)
+            .build();
+    cryptoTransactionTesterSolSell.initialize();
+    try {
+    cryptoTransactionTesterSolSell.test(SellSol);
+    } 
+    catch(IncorrectResultSizeDataAccessException e) {
+      assertEquals(cryptoTransactionTesterSolSell.numTransactions, e.getActualSize());
+    }
+    //cryptoTransactionTesterSolSell.test(SellSol);
+  }
+
+  /**
+   * Test a case where a user tries to buy BTC, which is not supported
+   */
+  @Test
+  public void testBtcBuyInvalid() throws ScriptException {
+    CryptoTransactionTester cryptoTransactionTester = CryptoTransactionTester.builder()
+            .initialBalanceInDollars(1000)
+            .initialCryptoBalance(Collections.singletonMap("ETH", 0.0))
+            .build();
+
+    cryptoTransactionTester.initialize();
+
+    CryptoTransaction cryptoTransaction = CryptoTransaction.builder()
+            .expectedEndingBalanceInDollars(1000)
+            .expectedEndingCryptoBalance(0.0)
+            .cryptoPrice(1000)
+            .cryptoAmountToTransact(0.1)
+            .cryptoName("BTC")
+            .cryptoTransactionTestType(CryptoTransactionTestType.BUY)
+            .shouldSucceed(false)
+            .build();
+    cryptoTransactionTester.test(cryptoTransaction);
+  }
+  
+  /**
+   * User tries to sell BTC
+   */
+  @Test
+  public void testBtcSellInvalid() throws ScriptException {
+    CryptoTransactionTester cryptoTransactionTester = CryptoTransactionTester.builder()
+            .initialBalanceInDollars(1000)
+            .initialCryptoBalance(Collections.singletonMap("ETH", 0.0))
+            .build();
+
+    cryptoTransactionTester.initialize();
+
+    CryptoTransaction cryptoTransaction = CryptoTransaction.builder()
+            .expectedEndingBalanceInDollars(1000)
+            .expectedEndingCryptoBalance(0.0)
+            .cryptoPrice(1000)
+            .cryptoAmountToTransact(0.1)
+            .cryptoName("BTC")
+            .cryptoTransactionTestType(CryptoTransactionTestType.SELL)
+            .shouldSucceed(false)
+            .build();
+    cryptoTransactionTester.test(cryptoTransaction);
+  }
 
   /**
    * Verifies that the counter will not be incremented and no interest will be applied if the deposit is not large enough,
